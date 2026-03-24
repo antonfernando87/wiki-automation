@@ -13,7 +13,7 @@ Generate a monthly progress report in the format:
 
 Environment variables:
     GH_TOKEN        PAT with repo read scope.
-    GITHUB_ACTOR    GitHub username to track (default: AntonMFernando-NOAA)
+    GITHUB_ACTOR    GitHub username to track (default: repository owner)
     REPORT_MONTH    ISO year-month (YYYY-MM). Defaults to last month.
 """
 
@@ -29,7 +29,7 @@ TOKEN = os.environ.get("GH_TOKEN", "")
 if not TOKEN:
     sys.exit("Error: GH_TOKEN is not set.")
 
-GITHUB_ACTOR = os.environ.get("GITHUB_ACTOR", "AntonMFernando-NOAA")
+GITHUB_ACTOR = os.environ.get("GITHUB_ACTOR") or os.environ.get("GITHUB_REPOSITORY_OWNER", "")
 REPORT_MONTH_STR = os.environ.get("REPORT_MONTH", "").strip()
 
 # Default to last month

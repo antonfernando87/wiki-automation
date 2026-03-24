@@ -7,7 +7,7 @@ back to a template-based paragraph when the API is unavailable.
 
 Environment variables:
     GH_TOKEN        PAT with repo read scope (also used for GitHub Models).
-    GITHUB_ACTOR    GitHub username to track (default: AntonMFernando-NOAA).
+    GITHUB_ACTOR    GitHub username to track (default: repository owner).
     WEEK_START      ISO date (YYYY-MM-DD) of the Monday. Defaults to last Monday.
 """
 
@@ -20,7 +20,7 @@ TOKEN = os.environ.get("GH_TOKEN", "")
 if not TOKEN:
     sys.exit("Error: GH_TOKEN is not set.")
 
-GITHUB_ACTOR = os.environ.get("GITHUB_ACTOR", "AntonMFernando-NOAA")
+GITHUB_ACTOR = os.environ.get("GITHUB_ACTOR") or os.environ.get("GITHUB_REPOSITORY_OWNER", "")
 
 WEEK_START_STR = os.environ.get("WEEK_START", "").strip()
 if WEEK_START_STR:
@@ -241,7 +241,7 @@ pr_table  = build_pr_table(all_prs)
 
 output = "\n".join([
     f"## Week of {MONDAY.strftime('%B %d')}–{FRIDAY.strftime('%d, %Y')}\n"
-    f"_Automatically maintained log of weekly activity across NOAA-EMC/global-workflow._",
+    f"_Automatically maintained log of weekly GitHub activity._",
     "",
     "### 🔀 Pull Requests",
     pr_table,

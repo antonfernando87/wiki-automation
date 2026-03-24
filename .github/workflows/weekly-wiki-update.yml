@@ -5,8 +5,8 @@ on:
     - cron: '59 19 * * 5'         # Every Friday at 19:59 UTC
   workflow_dispatch:
     inputs:
-      week_end:
-        description: 'Friday date of the week to summarise (YYYY-MM-DD). Defaults to today.'
+      week_start:
+        description: 'Monday date of the week to summarise (YYYY-MM-DD). Defaults to last Monday.'
         required: false
         default: ''
 
@@ -19,10 +19,6 @@ jobs:
     steps:
       - name: Checkout scripts
         uses: actions/checkout@v4
-        with:
-          sparse-checkout: |
-            .github/scripts
-          sparse-checkout-cone-mode: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -35,30 +31,28 @@ jobs:
       - name: Generate weekly summary
         env:
           GH_TOKEN: ${{ secrets.WIKI_PAT }}
-          AUTHOR_USERNAME: ${{ vars.WIKI_AUTHOR_USERNAME }}
-          WEEK_END_DATE: ${{ inputs.week_end }}
-          REPOS: 'NOAA-EMC/global-workflow,NOAA-EMC/GDASapp'
-        run: python .github/scripts/generate_weekly_summary.py
+          GITHUB_ACTOR: ${{ vars.GITHUB_ACTOR || github.repository_owner }}
+          WEEK_START: ${{ inputs.week_start }}
+        run: python generate_weekly_summary.py
 
       - name: Push to wiki
         env:
           WIKI_PAT: ${{ secrets.WIKI_PAT }}
+          REPO: ${{ github.repository }}
         run: |
           git config --global user.name  "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          git clone https://x-access-token:${WIKI_PAT}@github.com/AntonMFernando-NOAA/global-workflow.wiki.git wiki
+          git clone https://x-access-token:${WIKI_PAT}@github.com/${REPO}.wiki.git wiki
           cd wiki
 
           if [ ! -f Weekly-Updates.md ]; then
             printf '# Weekly Updates\n\nWeekly narrative summaries of work activity.\n\n---\n\n' > Weekly-Updates.md
           fi
 
-          # Prepend new entry so newest week appears at the top
           cat ../weekly_summary_patch.md Weekly-Updates.md > tmp.md
           mv tmp.md Weekly-Updates.md
 
-          # Add sidebar link once
           if ! grep -q 'Weekly-Updates' _Sidebar.md 2>/dev/null; then
             printf '\n* [[Weekly Updates|Weekly-Updates]]\n' >> _Sidebar.md
           fi

@@ -6,7 +6,7 @@ commit list.
 
 Environment variables:
     GH_TOKEN        PAT with repo read scope (also used for GitHub Models).
-    GITHUB_ACTOR    GitHub username to track (default: AntonMFernando-NOAA).
+    GITHUB_ACTOR    GitHub username to track (default: repository owner).
     SUMMARY_DATE    ISO date (YYYY-MM-DD). Defaults to yesterday.
 """
 
@@ -19,7 +19,7 @@ TOKEN = os.environ.get("GH_TOKEN", "")
 if not TOKEN:
     sys.exit("Error: GH_TOKEN is not set.")
 
-GITHUB_ACTOR = os.environ.get("GITHUB_ACTOR", "AntonMFernando-NOAA")
+GITHUB_ACTOR = os.environ.get("GITHUB_ACTOR") or os.environ.get("GITHUB_REPOSITORY_OWNER", "")
 
 SUMMARY_DATE_STR = os.environ.get("SUMMARY_DATE", "").strip()
 SUMMARY_DATE = date.fromisoformat(SUMMARY_DATE_STR) if SUMMARY_DATE_STR else date.today() - timedelta(days=1)

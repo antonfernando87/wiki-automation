@@ -1,9 +1,3 @@
-# ============================================================
-# Monthly Progress Report
-# Runs on the last day of each month at 23:30 UTC.
-# Updates this repository's wiki with a Monthly-Updates.md page.
-# ============================================================
-
 name: Monthly Wiki Update
 
 on:
@@ -54,7 +48,7 @@ jobs:
         if: steps.check_last_day.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.WIKI_PAT }}
-          GITHUB_ACTOR: ${{ vars.GITHUB_ACTOR || 'AntonMFernando-NOAA' }}
+          GITHUB_ACTOR: ${{ vars.GITHUB_ACTOR || github.repository_owner }}
           REPORT_MONTH: ${{ inputs.month }}
         run: python generate_monthly_summary.py
 
@@ -62,24 +56,22 @@ jobs:
         if: steps.check_last_day.outputs.skip != 'true'
         env:
           WIKI_PAT: ${{ secrets.WIKI_PAT }}
+          REPO: ${{ github.repository }}
         run: |
           git config --global user.name  "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          git clone https://x-access-token:${WIKI_PAT}@github.com/AntonMFernando-NOAA/wiki-automation.wiki.git wiki
+          git clone https://x-access-token:${WIKI_PAT}@github.com/${REPO}.wiki.git wiki
           cd wiki
 
-          # Create Monthly-Updates.md with header if it doesn't exist
           if [ ! -f Monthly-Updates.md ]; then
             printf '# Monthly Progress Reports\n\nAutomatically generated end-of-month progress reports.\n\n---\n\n' \
               > Monthly-Updates.md
           fi
 
-          # Prepend new entry (newest at top)
           cat ../monthly_summary_patch.md Monthly-Updates.md > tmp_monthly.md
           mv tmp_monthly.md Monthly-Updates.md
 
-          # Add sidebar link if missing
           if [ ! -f _Sidebar.md ]; then
             echo "* [[Home]]" > _Sidebar.md
           fi
