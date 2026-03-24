@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
-Generate a monthly progress report as a series of weekly narrative paragraphs.
-No PR/issue/commit metadata is included — output is plain narrative prose only.
+Generate a monthly progress report as a single narrative paragraph.
+No PR/issue/commit metadata is included — output is plain prose only.
 
 Format:
   ## Progress Report — <Month Year>
 
-  **Week of <Mon> – <Fri>**
   <narrative paragraph>
 
-  ...
+  ---
 
 Environment variables:
     GH_TOKEN        PAT with repo read scope (also used for GitHub Models).
@@ -87,16 +86,15 @@ def discover_repos():
     ]
 
 # ── Data collection ───────────────────────────────────────────────────────────
-def collect_week_prs(monday, friday):
-    """PRs merged by GITHUB_ACTOR during monday–friday."""
+def collect_merged_prs():
     try:
         items = gh_get(
             "https://api.github.com/search/issues",
             {
                 "q": (
                     f"author:{GITHUB_ACTOR} is:pr is:merged "
-                    f"merged:{monday.strftime('%Y-%m-%d')}"
-                    f"..{friday.strftime('%Y-%m-%d')}"
+                    f"merged:{year}-{month:02d}-01"
+                    f"..{year}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}"
                 )
             },
         )
@@ -105,11 +103,10 @@ def collect_week_prs(monday, friday):
             for pr in items
         ]
     except Exception as e:
-        print(f"Warning — PRs for week {monday}: {e}", file=sys.stderr)
+        print(f"Warning — merged PRs: {e}", file=sys.stderr)
         return []
 
-def collect_all_commits(repos):
-    """All commits by GITHUB_ACTOR this month, with date."""
+def collect_commits(repos):
     commits = []
     for repo in repos:
         try:
@@ -124,50 +121,27 @@ def collect_all_commits(repos):
             for c in items:
                 dt = parse_iso(c["commit"]["author"]["date"])
                 if dt and MONTH_START <= dt <= MONTH_END:
-                    commits.append({
-                        "message": c["commit"]["message"].split("\n")[0],
-                        "date": dt,
-                    })
+                    commits.append(c["commit"]["message"].split("\n")[0])
         except Exception as e:
             print(f"Warning: {repo}: {e}", file=sys.stderr)
     return commits
 
-# ── Week splitting ────────────────────────────────────────────────────────────
-def get_work_weeks():
-    """Mon–Fri work weeks that overlap with the report month."""
-    first = date(year, month, 1)
-    last  = date(year, month, calendar.monthrange(year, month)[1])
-    monday = first - timedelta(days=first.weekday())
-    weeks = []
-    while monday <= last:
-        friday = monday + timedelta(days=4)
-        if friday >= first:          # week overlaps the month
-            weeks.append((monday, friday))
-        monday += timedelta(days=7)
-    return weeks
-
 # ── Narrative generation ──────────────────────────────────────────────────────
-def _template_narrative(monday, friday, prs, commits):
-    week_label = (
-        f"week of {monday.strftime('%B %d')}–{friday.strftime('%B %d, %Y')}"
-    )
+def _template_narrative(prs, commits):
     if not prs and not commits:
-        return f"No activity was recorded for the {week_label}."
+        return f"No activity was recorded for {MONTH_LABEL}."
     parts = []
     if prs:
-        titles = "; ".join(p["title"] for p in prs[:3])
-        parts.append(f"Work focused on {titles}.")
+        titles = "; ".join(p["title"] for p in prs[:4])
+        parts.append(f"Work this month focused on {titles}.")
     if commits:
-        msgs = "; ".join(c["message"] for c in commits[:3])
+        msgs = "; ".join(commits[:4])
         parts.append(f"Commit activity included: {msgs}.")
     return " ".join(parts)
 
-def generate_week_narrative(monday, friday, prs, commits):
-    week_label = (
-        f"week of {monday.strftime('%B %d')}–{friday.strftime('%B %d, %Y')}"
-    )
+def generate_narrative(prs, commits):
     if not prs and not commits:
-        return f"No activity was recorded for the {week_label}."
+        return f"No activity was recorded for {MONTH_LABEL}."
 
     pr_block = (
         "\n".join(
@@ -177,17 +151,15 @@ def generate_week_narrative(monday, friday, prs, commits):
         )
         or "None"
     )
-    commit_block = (
-        "\n".join(f"- {c['message']}" for c in commits[:20]) or "None"
-    )
+    commit_block = "\n".join(f"- {m}" for m in commits[:30]) or "None"
 
     prompt = (
-        f"Below is the GitHub activity for the {week_label}.\n\n"
+        f"Below is the GitHub activity for {MONTH_LABEL}.\n\n"
         f"Pull Requests:\n{pr_block}\n\n"
         f"Commits:\n{commit_block}\n\n"
-        "Write a concise 2–4 sentence narrative work summary. "
-        "Focus on the themes and goals of the work, not individual items. "
-        "Do NOT mention PR numbers, issue numbers, commit hashes, or URLs. "
+        "Write a concise 3–5 sentence narrative summary of the month's work. "
+        "Focus on the overall themes and goals, not individual items. "
+        "Do NOT mention PR numbers, issue numbers, commit hashes, URLs, or weeks. "
         "Do NOT use bullet points. "
         "Write in plain prose as a single cohesive paragraph. "
         "Output only the paragraph — no headings, no preamble."
@@ -207,16 +179,16 @@ def generate_week_narrative(monday, friday, prs, commits):
                         "role": "system",
                         "content": (
                             "You are a concise technical writer summarising a "
-                            "software developer's weekly GitHub activity into "
-                            "plain narrative prose. Be specific about what was "
-                            "worked on; avoid generic filler sentences. Never "
-                            "include PR numbers, issue numbers, commit hashes, "
-                            "or URLs."
+                            "software developer's monthly GitHub activity into "
+                            "a single plain narrative paragraph. Be specific "
+                            "about what was worked on; avoid generic filler. "
+                            "Never mention PR numbers, issue numbers, commit "
+                            "hashes, URLs, or specific week dates."
                         ),
                     },
                     {"role": "user", "content": prompt},
                 ],
-                "max_tokens": 300,
+                "max_tokens": 350,
                 "temperature": 0.3,
             },
             timeout=30,
@@ -228,47 +200,29 @@ def generate_week_narrative(monday, friday, prs, commits):
             f"Warning — GitHub Models API unavailable ({e}); using template.",
             file=sys.stderr,
         )
-        return _template_narrative(monday, friday, prs, commits)
+        return _template_narrative(prs, commits)
 
 # ── Write output ──────────────────────────────────────────────────────────────
-def write_summary(week_narratives):
-    lines = [f"## Progress Report — {MONTH_LABEL}\n\n"]
-    for monday, friday, narrative in week_narratives:
-        week_label = (
-            f"Week of {monday.strftime('%B %d')} – {friday.strftime('%B %d')}"
-        )
-        lines.append(f"**{week_label}**\n\n")
-        lines.append(f"{narrative}\n\n")
-    lines.append("---\n\n")
-
+def write_summary(narrative):
     with open("monthly_summary_patch.md", "w") as f:
-        f.writelines(lines)
+        f.write(f"## Progress Report — {MONTH_LABEL}\n\n")
+        f.write(f"{narrative}\n\n")
+        f.write("---\n\n")
     print("✓ Monthly summary written to monthly_summary_patch.md")
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     print(f"Generating monthly report for {MONTH_LABEL} ({GITHUB_ACTOR})...")
 
-    repos       = discover_repos()
-    all_commits = collect_all_commits(repos)
-    weeks       = get_work_weeks()
+    repos   = discover_repos()
+    prs     = collect_merged_prs()
+    commits = collect_commits(repos)
 
-    week_narratives = []
-    for monday, friday in weeks:
-        week_start = datetime(monday.year, monday.month, monday.day, 0, 0, 0, tzinfo=timezone.utc)
-        week_end   = datetime(friday.year, friday.month, friday.day, 23, 59, 59, tzinfo=timezone.utc)
+    print(f"  Merged PRs : {len(prs)}")
+    print(f"  Commits    : {len(commits)}")
 
-        prs = collect_week_prs(monday, friday)
-        commits = [c for c in all_commits if week_start <= c["date"] <= week_end]
-
-        print(
-            f"  {monday.strftime('%b %d')}–{friday.strftime('%b %d')}: "
-            f"{len(prs)} PRs, {len(commits)} commits"
-        )
-        narrative = generate_week_narrative(monday, friday, prs, commits)
-        week_narratives.append((monday, friday, narrative))
-
-    write_summary(week_narratives)
+    narrative = generate_narrative(prs, commits)
+    write_summary(narrative)
 
 if __name__ == "__main__":
     main()
