@@ -53,6 +53,17 @@ jobs:
               > Daily-Updates.md
           fi
 
+          # Remove existing entry for this date (avoids duplicates on re-runs)
+          python3 - <<'PYEOF2'
+import re, os
+if os.path.exists('Daily-Updates.md'):
+    hdr = open('../daily_summary_patch.md', encoding='utf-8').readline().strip()
+    txt = open('Daily-Updates.md', encoding='utf-8').read()
+    txt = re.sub(re.escape(hdr) + r'.*?(?=\n## |\Z)', '', txt, count=1, flags=re.DOTALL)
+    txt = re.sub(r'\n{3,}', '\n\n', txt)
+    open('Daily-Updates.md', 'w', encoding='utf-8').write(txt)
+PYEOF2
+
           cat ../daily_summary_patch.md Daily-Updates.md > tmp_updates.md
           mv tmp_updates.md Daily-Updates.md
 

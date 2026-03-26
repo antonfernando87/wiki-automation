@@ -183,13 +183,35 @@ def _default_branch(repo_full):
 
 
 def _branch_msgs(repo_full, branch):
-    """Commits by GITHUB_ACTOR on branch within the day window, noise-filtered."""
+    """Return commits by GITHUB_ACTOR that are unique to this branch
+    (not reachable from the default branch) within the day window, noise-filtered.
+    For the default branch itself, falls back to the standard commits endpoint.
+    """
+    default_br = _default_branch(repo_full)
     try:
-        items = gh_get(
-            f"https://api.github.com/repos/{repo_full}/commits",
-            {"sha": branch, "since": DAY_START.isoformat(),
-             "until": DAY_END.isoformat(), "author": GITHUB_ACTOR},
-        )
+        if branch == default_br:
+            items = gh_get(
+                f"https://api.github.com/repos/{repo_full}/commits",
+                {"sha": branch, "since": DAY_START.isoformat(),
+                 "until": DAY_END.isoformat(), "author": GITHUB_ACTOR},
+            )
+        else:
+            # Use compare to get only commits unique to this branch (not on default)
+            resp = requests.get(
+                f"https://api.github.com/repos/{repo_full}/compare/{default_br}...{branch}",
+                headers=GH_HEADERS,
+                params={"per_page": 250},
+            )
+            resp.raise_for_status()
+            all_unique = resp.json().get("commits", [])
+            # Filter by author login and time window
+            items = [
+                c for c in all_unique
+                if (c.get("author") or {}).get("login", "").lower() == GITHUB_ACTOR.lower()
+                and DAY_START <= datetime.fromisoformat(
+                    c["commit"]["committer"]["date"].replace("Z", "+00:00")
+                ) <= DAY_END
+            ]
         return [
             c["commit"]["message"].splitlines()[0]
             for c in items
@@ -394,12 +416,15 @@ def build_branch_work_table(branch_work):
     if not branch_work:
         return ""
     rows = [
-        "| Branch | Work Commits |",
-        "|--------|--------------|"  ,
+        "| Branch | Work Description |",
+        "|--------|------------------|",
     ]
     for branch_key, msgs in branch_work.items():
-        unique_msgs = list(dict.fromkeys(msgs))[:4]
-        rows.append(f"| `{branch_key}` | {' · '.join(unique_msgs)} |")
+        unique_msgs = list(dict.fromkeys(msgs))
+        # Truncate each message and join up to 3
+        snippets = [m[:72] + ("…" if len(m) > 72 else "") for m in unique_msgs[:3]]
+        description = " · ".join(snippets)
+        rows.append(f"| `{branch_key}` | {description} |")
     return "\n".join(rows) + "\n"
 
 

@@ -8,7 +8,7 @@ back to a template-based paragraph when the API is unavailable.
 Environment variables:
     GH_TOKEN        PAT with repo read scope (also used for GitHub Models).
     GITHUB_ACTOR    GitHub username to track (default: repository owner).
-    WEEK_START      ISO date (YYYY-MM-DD) of the Monday. Defaults to last Monday.
+    WEEK_START      Any date within the target week (YYYY-MM-DD). Defaults to the current week.
 """
 
 import os, sys, re, requests
@@ -24,7 +24,8 @@ GITHUB_ACTOR = os.environ.get("GITHUB_ACTOR") or os.environ.get("GITHUB_REPOSITO
 
 WEEK_START_STR = os.environ.get("WEEK_START", "").strip()
 if WEEK_START_STR:
-    MONDAY = date.fromisoformat(WEEK_START_STR)
+    _provided = date.fromisoformat(WEEK_START_STR)
+    MONDAY = _provided - timedelta(days=_provided.weekday())  # normalise to Monday
 else:
     today = date.today()
     MONDAY = today - timedelta(days=today.weekday())  # last Monday
@@ -172,13 +173,35 @@ def _default_branch(repo_full):
 
 
 def _branch_msgs(repo_full, branch):
-    """Commits by GITHUB_ACTOR on branch within the week window, noise-filtered."""
+    """Return commits by GITHUB_ACTOR that are unique to this branch
+    (not reachable from the default branch) within the week window, noise-filtered.
+    For the default branch itself, falls back to the standard commits endpoint.
+    """
+    default_br = _default_branch(repo_full)
     try:
-        items = gh_get(
-            f"https://api.github.com/repos/{repo_full}/commits",
-            {"sha": branch, "since": WEEK_START.isoformat(),
-             "until": WEEK_END.isoformat(), "author": GITHUB_ACTOR},
-        )
+        if branch == default_br:
+            items = gh_get(
+                f"https://api.github.com/repos/{repo_full}/commits",
+                {"sha": branch, "since": WEEK_START.isoformat(),
+                 "until": WEEK_END.isoformat(), "author": GITHUB_ACTOR},
+            )
+        else:
+            # Use compare to get only commits unique to this branch (not on default)
+            resp = requests.get(
+                f"https://api.github.com/repos/{repo_full}/compare/{default_br}...{branch}",
+                headers=GH_HEADERS,
+                params={"per_page": 250},
+            )
+            resp.raise_for_status()
+            all_unique = resp.json().get("commits", [])
+            # Filter by author login and time window
+            items = [
+                c for c in all_unique
+                if (c.get("author") or {}).get("login", "").lower() == GITHUB_ACTOR.lower()
+                and WEEK_START <= datetime.fromisoformat(
+                    c["commit"]["committer"]["date"].replace("Z", "+00:00")
+                ) <= WEEK_END
+            ]
         return [
             c["commit"]["message"].splitlines()[0]
             for c in items
@@ -377,12 +400,15 @@ def build_branch_work_table(branch_work):
     if not branch_work:
         return ""
     rows = [
-        "| Branch | Work Commits |",
-        "|--------|--------------|"  ,
+        "| Branch | Work Description |",
+        "|--------|------------------|",
     ]
     for branch_key, msgs in branch_work.items():
-        unique_msgs = list(dict.fromkeys(msgs))[:4]
-        rows.append(f"| `{branch_key}` | {' · '.join(unique_msgs)} |")
+        unique_msgs = list(dict.fromkeys(msgs))
+        # Truncate each message and join up to 3
+        snippets = [m[:72] + ("…" if len(m) > 72 else "") for m in unique_msgs[:3]]
+        description = " · ".join(snippets)
+        rows.append(f"| `{branch_key}` | {description} |")
     return "\n".join(rows) + "\n"
 
 

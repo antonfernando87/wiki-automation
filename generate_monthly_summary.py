@@ -164,12 +164,30 @@ def collect_branch_work():
         return default_branch_cache[rf]
 
     def _branch_msgs(rf, br):
+        default_br = _default_branch(rf)
         try:
-            items = gh_get(
-                f"https://api.github.com/repos/{rf}/commits",
-                {"sha": br, "since": MONTH_START.isoformat(),
-                 "until": MONTH_END.isoformat(), "author": GITHUB_ACTOR},
-            )
+            if br == default_br:
+                items = gh_get(
+                    f"https://api.github.com/repos/{rf}/commits",
+                    {"sha": br, "since": MONTH_START.isoformat(),
+                     "until": MONTH_END.isoformat(), "author": GITHUB_ACTOR},
+                )
+            else:
+                # Use compare to get only commits unique to this branch (not on default)
+                resp = requests.get(
+                    f"https://api.github.com/repos/{rf}/compare/{default_br}...{br}",
+                    headers=GH_HEADERS,
+                    params={"per_page": 250},
+                )
+                resp.raise_for_status()
+                all_unique = resp.json().get("commits", [])
+                items = [
+                    c for c in all_unique
+                    if (c.get("author") or {}).get("login", "").lower() == GITHUB_ACTOR.lower()
+                    and MONTH_START <= datetime.fromisoformat(
+                        c["commit"]["committer"]["date"].replace("Z", "+00:00")
+                    ) <= MONTH_END
+                ]
             return [
                 c["commit"]["message"].splitlines()[0]
                 for c in items
