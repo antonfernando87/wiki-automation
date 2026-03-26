@@ -78,13 +78,15 @@ try:
     ):
         repo = item.get("repository_url", "").replace("https://api.github.com/repos/", "")
         all_prs.append({
-            "repo":   repo.split("/")[-1],
-            "number": item["number"],
-            "title":  item["title"],
-            "state":  "merged",
-            "branch": "",
-            "body":   (item.get("body") or "")[:300],
-            "url":    item["html_url"],
+            "repo":        repo.split("/")[-1],
+            "repo_full":   repo,
+            "number":      item["number"],
+            "title":       item["title"],
+            "state":       "merged",
+            "had_commits": True,
+            "branch":      "",
+            "body":        (item.get("body") or "")[:300],
+            "url":         item["html_url"],
         })
 except Exception as e:
     print(f"Warning — merged PRs search: {e}", file=sys.stderr)
@@ -97,67 +99,129 @@ try:
     ):
         repo = item.get("repository_url", "").replace("https://api.github.com/repos/", "")
         all_prs.append({
-            "repo":   repo.split("/")[-1],
-            "number": item["number"],
-            "title":  item["title"],
-            "state":  "open",
-            "branch": "",
-            "body":   (item.get("body") or "")[:300],
-            "url":    item["html_url"],
+            "repo":        repo.split("/")[-1],
+            "repo_full":   repo,
+            "number":      item["number"],
+            "title":       item["title"],
+            "state":       "open",
+            "had_commits": None,  # determined after push-event scan
+            "branch":      "",
+            "body":        (item.get("body") or "")[:300],
+            "url":         item["html_url"],
         })
 except Exception as e:
     print(f"Warning — open PRs search: {e}", file=sys.stderr)
 
 # ── Collect commits for narrative context ─────────────────────────────────────
-commit_messages = []
-try:
-    repos = gh_get(
-        f"https://api.github.com/users/{GITHUB_ACTOR}/repos",
-        {"type": "all", "sort": "updated"},
-    )
-    for repo_data in repos[:20]:  # cap at 20 most-recently-updated repos
-        if repo_data.get("archived"):
-            continue
-        repo_full = f"{repo_data['owner']['login']}/{repo_data['name']}"
+SKIP_RE = re.compile(
+    r"^(Merge (pull request|branch|remote-tracking branch|origin|remote)|"
+    r"Sync (from|with|branch)|Update(d)? (from|branch|changelog|version)|"
+    r"Bump version|Revert \"?Merge )",
+    re.I,
+)
+
+commit_messages    = []
+branch_work_commits: dict = {}   # {"repo/branch": [msg, ...]} – branches with no PR
+active_pr_branches: set  = set() # (repo_full, branch) pushed in window + has a PR
+_default_branch_cache: dict = {}  # repo_full -> default branch name
+
+
+def _default_branch(repo_full):
+    if repo_full not in _default_branch_cache:
         try:
-            for c in gh_get(
-                f"https://api.github.com/repos/{repo_full}/commits",
-                {"since": WEEK_START.isoformat(), "until": WEEK_END.isoformat(), "author": GITHUB_ACTOR},
-            ):
-                msg = c["commit"]["message"].splitlines()[0]
-                if not re.match(r"^merge\b", msg, re.I):
-                    commit_messages.append(msg)
+            r = requests.get(
+                f"https://api.github.com/repos/{repo_full}", headers=GH_HEADERS
+            )
+            _default_branch_cache[repo_full] = r.json().get("default_branch", "main")
         except Exception:
-            pass
+            _default_branch_cache[repo_full] = "main"
+    return _default_branch_cache[repo_full]
+
+
+try:
+    for event in gh_get(
+        f"https://api.github.com/users/{GITHUB_ACTOR}/events", {"per_page": 100}
+    ):
+        if event["type"] != "PushEvent":
+            continue
+        created = datetime.fromisoformat(event["created_at"].replace("Z", "+00:00"))
+        if not (WEEK_START <= created <= WEEK_END):
+            continue
+        repo_full = event["repo"]["name"]
+        branch    = event["payload"]["ref"].replace("refs/heads/", "")
+        msgs = [
+            c["message"].splitlines()[0]
+            for c in event["payload"].get("commits", [])
+            if not SKIP_RE.match(c["message"])
+        ]
+        if not msgs:
+            continue
+        if branch == _default_branch(repo_full):
+            commit_messages.extend(msgs)
+            continue
+        owner = repo_full.split("/")[0]
+        try:
+            pr_list = gh_get(
+                f"https://api.github.com/repos/{repo_full}/pulls",
+                {"head": f"{owner}:{branch}", "state": "all"},
+            )
+        except Exception:
+            pr_list = []
+        if pr_list:
+            active_pr_branches.add((repo_full, branch))
+            commit_messages.extend(msgs)
+        else:
+            key = f"{repo_full.split('/')[-1]}/{branch}"
+            branch_work_commits.setdefault(key, []).extend(msgs)
 except Exception as e:
-    print(f"Warning — commits: {e}", file=sys.stderr)
+    print(f"Warning — push events: {e}", file=sys.stderr)
+
+# Mark which open PRs had commits pushed in this window
+for p in all_prs:
+    if p["state"] != "open":
+        continue
+    try:
+        detail = requests.get(
+            f"https://api.github.com/repos/{p['repo_full']}/pulls/{p['number']}",
+            headers=GH_HEADERS,
+        ).json()
+        branch = detail.get("head", {}).get("ref", "")
+        p["branch"]      = branch
+        p["had_commits"] = bool(branch) and (p["repo_full"], branch) in active_pr_branches
+    except Exception:
+        p["had_commits"] = True
 
 # ── Narrative via GitHub Models ───────────────────────────────────────────────
-def _template_narrative(prs):
-    if not prs:
+def _template_narrative(prs, commits, branch_work):
+    narrative_prs = [p for p in prs if p.get("had_commits", True)]
+    if not narrative_prs and not commits and not branch_work:
         return (
-            f"No pull request activity was recorded for the week of "
+            f"No activity was recorded for the week of "
             f"{MONDAY.strftime('%B %d')}–{FRIDAY.strftime('%B %d, %Y')}."
         )
-    repos_mentioned = sorted({p["repo"] for p in prs})
-    open_prs   = [p for p in prs if p["state"] == "open"]
-    merged_prs = [p for p in prs if p["state"] == "merged"]
-
+    repos_mentioned = sorted({p["repo"] for p in narrative_prs})
+    open_prs   = [p for p in narrative_prs if p["state"] == "open"]
+    merged_prs = [p for p in narrative_prs if p["state"] == "merged"]
     parts = []
-    titles_short = "; ".join(p["title"][:70] for p in prs[:3])
-    parts.append(f"This week's work covered: {titles_short}.")
+    titles_short = "; ".join(p["title"][:70] for p in narrative_prs[:3])
+    if titles_short:
+        parts.append(f"This week's work covered: {titles_short}.")
+    if branch_work:
+        branch_msgs = [m for msgs in branch_work.values() for m in msgs][:3]
+        parts.append(f"Branch work (no PR): {'; '.join(branch_msgs)}.")
     pr_summary = []
     if merged_prs:
         pr_summary.append(f"{len(merged_prs)} PR{'s' if len(merged_prs) > 1 else ''} merged")
     if open_prs:
-        pr_summary.append(f"{len(open_prs)} PR{'s' if len(open_prs) > 1 else ''} open")
-    if pr_summary:
+        pr_summary.append(f"{len(open_prs)} PR{'s' if len(open_prs) > 1 else ''} open with commits")
+    if pr_summary and repos_mentioned:
         parts.append(f"Overall, {' and '.join(pr_summary)} across {', '.join(repos_mentioned)}.")
     return " ".join(parts)
 
 
-def generate_narrative(prs, commits):
-    if not prs and not commits:
+def generate_narrative(prs, commits, branch_work):
+    narrative_prs = [p for p in prs if p.get("had_commits", True)]
+    if not narrative_prs and not commits and not branch_work:
         return (
             f"No activity was recorded for the week of "
             f"{MONDAY.strftime('%B %d')}–{FRIDAY.strftime('%B %d, %Y')}."
@@ -166,20 +230,27 @@ def generate_narrative(prs, commits):
     pr_block = "\n".join(
         f"- PR #{p['number']} ({p['state']}) [{p['repo']}]: {p['title']}"
         + (f"\n  {p['body'][:200]}" if p["body"].strip() else "")
-        for p in prs
+        for p in narrative_prs
     ) or "None"
 
     commit_block = "\n".join(f"- {m}" for m in commits[:25]) or "None"
 
+    branch_block = "\n".join(
+        f"- [{b}]: {'; '.join(msgs[:3])}"
+        for b, msgs in branch_work.items()
+    ) or "None"
+
     prompt = (
         f"Below is the GitHub activity for the week of "
         f"{MONDAY.strftime('%B %d')}–{FRIDAY.strftime('%B %d, %Y')}.\n\n"
-        f"Pull Requests:\n{pr_block}\n\n"
-        f"Recent commits:\n{commit_block}\n\n"
+        f"Pull Requests (with commits this week):\n{pr_block}\n\n"
+        f"Commits on PR branches:\n{commit_block}\n\n"
+        f"Branch work (commits on branches without a PR):\n{branch_block}\n\n"
         "Write a concise 3–5 sentence narrative work summary. "
         "Focus on the themes and goals of the work, not individual commits. "
+        "Include work done directly in branches even if no PR exists yet. "
         "Mention specific variable names, file types, or components only when they "
-        "are central to the PR descriptions. "
+        "are central to the descriptions. "
         "Do NOT use bullet points. Write in plain prose as a single cohesive paragraph. "
         "Output only the paragraph — no headings, no preamble."
     )
@@ -213,7 +284,7 @@ def generate_narrative(prs, commits):
         return resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
         print(f"Warning — GitHub Models API unavailable ({e}); using template narrative.", file=sys.stderr)
-        return _template_narrative(prs)
+        return _template_narrative(prs, commits, branch_work)
 
 
 # ── PR table ──────────────────────────────────────────────────────────────────
@@ -235,27 +306,41 @@ def build_pr_table(prs):
     return "\n".join(rows) + "\n"
 
 
-# ── Build output ──────────────────────────────────────────────────────────────
-narrative = generate_narrative(all_prs, commit_messages)
-pr_table  = build_pr_table(all_prs)
+def build_branch_work_table(branch_work):
+    if not branch_work:
+        return ""
+    rows = [
+        "| Branch | Work Commits |",
+        "|--------|--------------|"  ,
+    ]
+    for branch_key, msgs in branch_work.items():
+        unique_msgs = list(dict.fromkeys(msgs))[:4]
+        rows.append(f"| `{branch_key}` | {' · '.join(unique_msgs)} |")
+    return "\n".join(rows) + "\n"
 
-output = "\n".join([
+
+# ── Build output ──────────────────────────────────────────────────────────────
+narrative    = generate_narrative(all_prs, commit_messages, branch_work_commits)
+pr_table     = build_pr_table(all_prs)
+branch_table = build_branch_work_table(branch_work_commits)
+
+sections = [
     f"## Week of {MONDAY.strftime('%B %d')}–{FRIDAY.strftime('%d, %Y')}\n"
     f"_Automatically maintained log of weekly GitHub activity._",
     "",
     "### 🔀 Pull Requests",
     pr_table,
-    "### 💾 Work Summary",
-    narrative,
-    "",
-    "---",
-    "",
-])
+]
+if branch_table:
+    sections += ["### 🌿 Branch Work", branch_table, ""]
+sections += ["### 💾 Work Summary", narrative, "", "---", ""]
+
+output = "\n".join(sections)
 
 with open("weekly_summary_patch.md", "w") as f:
     f.write(output)
 
 print(
     f"Weekly summary written: {MONDAY} to {FRIDAY}  |  "
-    f"{len(all_prs)} PRs  |  {len(commit_messages)} commits"
+    f"{len(all_prs)} PRs  |  {len(commit_messages)} PR-branch commits  |  {len(branch_work_commits)} branch-work groups"
 )

@@ -106,29 +106,64 @@ def collect_merged_prs():
         print(f"Warning — merged PRs: {e}", file=sys.stderr)
         return []
 
-def collect_commits(repos):
-    commits = []
-    for repo in repos:
-        try:
-            items = gh_get(
-                f"https://api.github.com/repos/{repo}/commits",
-                {
-                    "since": MONTH_START.isoformat(),
-                    "until": MONTH_END.isoformat(),
-                    "author": GITHUB_ACTOR,
-                },
-            )
-            for c in items:
-                dt = parse_iso(c["commit"]["author"]["date"])
-                if dt and MONTH_START <= dt <= MONTH_END:
-                    commits.append(c["commit"]["message"].split("\n")[0])
-        except Exception as e:
-            print(f"Warning: {repo}: {e}", file=sys.stderr)
-    return commits
+def collect_branch_work():
+    """Collect commits on branches that have no PR, using push events."""
+    import re as _re
+    SKIP_RE = _re.compile(
+        r"^(Merge (pull request|branch|remote-tracking branch|origin|remote)|"
+        r"Sync (from|with|branch)|Update(d)? (from|branch|changelog|version)|"
+        r"Bump version|Revert \"?Merge )",
+        _re.I,
+    )
+    branch_work: dict = {}   # {"repo/branch": [msg, ...]}
+    active_pr_branches: set = set()
+    default_branch_cache: dict = {}
+
+    def _default_branch(rf):
+        if rf not in default_branch_cache:
+            try:
+                r = requests.get(f"https://api.github.com/repos/{rf}", headers=GH_HEADERS)
+                default_branch_cache[rf] = r.json().get("default_branch", "main")
+            except Exception:
+                default_branch_cache[rf] = "main"
+        return default_branch_cache[rf]
+
+    try:
+        for event in gh_get(
+            f"https://api.github.com/users/{GITHUB_ACTOR}/events", {"per_page": 100}
+        ):
+            if event["type"] != "PushEvent":
+                continue
+            created = parse_iso(event["created_at"])
+            if not (created and MONTH_START <= created <= MONTH_END):
+                continue
+            repo_full = event["repo"]["name"]
+            branch    = event["payload"]["ref"].replace("refs/heads/", "")
+            msgs = [
+                c["message"].splitlines()[0]
+                for c in event["payload"].get("commits", [])
+                if not SKIP_RE.match(c["message"])
+            ]
+            if not msgs or branch == _default_branch(repo_full):
+                continue
+            owner = repo_full.split("/")[0]
+            try:
+                pr_list = gh_get(
+                    f"https://api.github.com/repos/{repo_full}/pulls",
+                    {"head": f"{owner}:{branch}", "state": "all"},
+                )
+            except Exception:
+                pr_list = []
+            if not pr_list:
+                key = f"{repo_full.split('/')[-1]}/{branch}"
+                branch_work.setdefault(key, []).extend(msgs)
+    except Exception as e:
+        print(f"Warning — push events (branch work): {e}", file=sys.stderr)
+    return branch_work
 
 # ── Narrative generation ──────────────────────────────────────────────────────
-def _template_narrative(prs, commits):
-    if not prs and not commits:
+def _template_narrative(prs, commits, branch_work):
+    if not prs and not commits and not branch_work:
         return f"No activity was recorded for {MONTH_LABEL}."
     parts = []
     if prs:
@@ -137,10 +172,13 @@ def _template_narrative(prs, commits):
     if commits:
         msgs = "; ".join(commits[:4])
         parts.append(f"Commit activity included: {msgs}.")
+    if branch_work:
+        branch_msgs = [m for msgs in branch_work.values() for m in msgs][:3]
+        parts.append(f"Branch work (no PR): {'; '.join(branch_msgs)}.")
     return " ".join(parts)
 
-def generate_narrative(prs, commits):
-    if not prs and not commits:
+def generate_narrative(prs, commits, branch_work):
+    if not prs and not commits and not branch_work:
         return f"No activity was recorded for {MONTH_LABEL}."
 
     pr_block = (
@@ -153,12 +191,19 @@ def generate_narrative(prs, commits):
     )
     commit_block = "\n".join(f"- {m}" for m in commits[:30]) or "None"
 
+    branch_block = "\n".join(
+        f"- [{b}]: {'; '.join(msgs[:3])}"
+        for b, msgs in branch_work.items()
+    ) or "None"
+
     prompt = (
         f"Below is the GitHub activity for {MONTH_LABEL}.\n\n"
-        f"Pull Requests:\n{pr_block}\n\n"
-        f"Commits:\n{commit_block}\n\n"
+        f"Merged Pull Requests:\n{pr_block}\n\n"
+        f"Commits on PR branches:\n{commit_block}\n\n"
+        f"Branch work (commits on branches without a PR):\n{branch_block}\n\n"
         "Write a concise 3–5 sentence narrative summary of the month's work. "
         "Focus on the overall themes and goals, not individual items. "
+        "Include work done directly in branches even if no PR was opened. "
         "Do NOT mention PR numbers, issue numbers, commit hashes, URLs, or weeks. "
         "Do NOT use bullet points. "
         "Write in plain prose as a single cohesive paragraph. "
@@ -200,7 +245,7 @@ def generate_narrative(prs, commits):
             f"Warning — GitHub Models API unavailable ({e}); using template.",
             file=sys.stderr,
         )
-        return _template_narrative(prs, commits)
+        return _template_narrative(prs, commits, branch_work)
 
 # ── Write output ──────────────────────────────────────────────────────────────
 def write_summary(narrative):
@@ -212,14 +257,14 @@ def write_summary(narrative):
 def main():
     print(f"Generating monthly report for {MONTH_LABEL} ({GITHUB_ACTOR})...")
 
-    repos   = discover_repos()
-    prs     = collect_merged_prs()
-    commits = collect_commits(repos)
+    repos       = discover_repos()
+    prs         = collect_merged_prs()
+    branch_work = collect_branch_work()
 
-    print(f"  Merged PRs : {len(prs)}")
-    print(f"  Commits    : {len(commits)}")
+    print(f"  Merged PRs        : {len(prs)}")
+    print(f"  Branch-work groups: {len(branch_work)}")
 
-    narrative = generate_narrative(prs, commits)
+    narrative = generate_narrative(prs, [], branch_work)
     write_summary(narrative)
 
 if __name__ == "__main__":
