@@ -76,17 +76,7 @@ jobs:
           fi
 
           # Remove existing entry for this month from stripped.md (avoids duplicates on re-runs)
-          python3 - <<'PYEOF2'
-import re, os
-if os.path.exists('stripped.md'):
-    hdr = open('../monthly_summary_patch.md', encoding='utf-8').readline().strip()
-    m = re.match(r'(- \*\*[^*]+\*\*:)', hdr)
-    if m:
-        txt = open('stripped.md', encoding='utf-8').read()
-        txt = re.sub(re.escape(m.group(1)) + r'.*?\n\n', '', txt, count=1, flags=re.DOTALL)
-        txt = re.sub(r'\n{3,}', '\n\n', txt)
-        open('stripped.md', 'w', encoding='utf-8').write(txt)
-PYEOF2
+          python3 ../dedup_wiki.py ../monthly_summary_patch.md stripped.md
 
           # Rebuild: fixed header + new bullet entry + previous entries
           printf '%s\n\n' "$HEADER" > Monthly-Updates.md

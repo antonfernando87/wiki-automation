@@ -53,15 +53,7 @@ jobs:
           fi
 
           # Remove existing entry for this week (avoids duplicates on re-runs)
-          python3 - <<'PYEOF2'
-import re, os
-if os.path.exists('Weekly-Updates.md'):
-    hdr = open('../weekly_summary_patch.md', encoding='utf-8').readline().strip()
-    txt = open('Weekly-Updates.md', encoding='utf-8').read()
-    txt = re.sub(re.escape(hdr) + r'.*?(?=\n## |\Z)', '', txt, count=1, flags=re.DOTALL)
-    txt = re.sub(r'\n{3,}', '\n\n', txt)
-    open('Weekly-Updates.md', 'w', encoding='utf-8').write(txt)
-PYEOF2
+          python3 ../dedup_wiki.py ../weekly_summary_patch.md Weekly-Updates.md
 
           cat ../weekly_summary_patch.md Weekly-Updates.md > tmp.md
           mv tmp.md Weekly-Updates.md
