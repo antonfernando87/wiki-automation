@@ -1,0 +1,25 @@
+# wiki-automation personal configuration
+# ──────────────────────────────────────────────────────────────────────────────
+# This file lets you personalise which repositories are scanned.
+# All settings are optional — defaults are noted inline.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Repositories to explicitly track.
+# Accepts "owner/name" or bare "name".
+# If non-empty, ONLY these repos are scanned for commits and branch work.
+# Leave as [] (or omit the key) to auto-scan all your repos.
+#
+# Example:
+#   track_repos:
+#     - AntonMFernando-NOAA/global-workflow
+#     - AntonMFernando-NOAA/ufs-weather-model
+track_repos: []
+
+# Repositories to ignore entirely (by bare name or "owner/name").
+# Useful to exclude forks, mirrors, or noise repos.
+#
+# Example:
+#   ignore_repos:
+#     - test-automation
+#     - some-fork
+ignore_repos: []

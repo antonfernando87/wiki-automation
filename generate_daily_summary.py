@@ -33,6 +33,34 @@ GH_HEADERS = {
     "X-GitHub-Api-Version": "2022-11-28",
 }
 
+# ── Personal config (config.yml) ──────────────────────────────────────────────
+try:
+    import yaml as _yaml
+    _cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yml")
+    try:
+        with open(_cfg_path) as _f:
+            _cfg = _yaml.safe_load(_f) or {}
+    except FileNotFoundError:
+        _cfg = {}
+    except Exception as _e:
+        print(f"Warning — config.yml: {_e}", file=sys.stderr)
+        _cfg = {}
+except ImportError:
+    _cfg = {}
+
+_TRACK_REPOS  = {r.split("/")[-1] for r in (_cfg.get("track_repos") or [])}
+_IGNORE_REPOS = {r.split("/")[-1] for r in (_cfg.get("ignore_repos") or [])}
+
+
+def _should_scan(repo_data):
+    name = repo_data["name"]
+    if _IGNORE_REPOS and name in _IGNORE_REPOS:
+        return False
+    if _TRACK_REPOS:
+        return name in _TRACK_REPOS
+    return True
+
+
 # ── GitHub REST helper ────────────────────────────────────────────────────────
 def gh_get(url, params=None):
     results, p = [], {"per_page": 100, **(params or {})}
@@ -124,10 +152,15 @@ except Exception as e:
     print(f"Warning — issues: {e}", file=sys.stderr)
 
 # ── Commit & branch-work collection (full repo+branch scan) ────────────────────
+# Skip any merge/sync/automated commit — filter broadly so stale branch noise
+# never leaks into the work summary
 SKIP_RE = re.compile(
-    r"^(Merge (pull request|branch|remote-tracking branch|origin|remote)|"
-    r"Sync (from|with|branch)|Update(d)? (from|branch|changelog|version)|"
-    r"Bump version|Revert \"?Merge )",
+    r"^Merged?\b|"                                    # all merge commits
+    r"^Sync (from|with|to|branch)|"                   # sync commits
+    r"^Update(d)? (from|branch|changelog|version|submodule)|"  # update noise
+    r"^Bump (version|deps?|dependencies)|"            # version bumps
+    r"^Revert .{0,30}[Mm]erge|"                       # merge reverts
+    r"^Auto.?generated|^chore(\(.*\))?:\s*(release|bump|version)",
     re.I,
 )
 
@@ -171,8 +204,9 @@ try:
         f"https://api.github.com/users/{GITHUB_ACTOR}/repos",
         {"type": "all", "sort": "updated"},
     )
-    for repo_data in all_repos[:40]:
-        if repo_data.get("archived"):
+    _repo_pool = all_repos if _TRACK_REPOS else all_repos[:40]
+    for repo_data in _repo_pool:
+        if repo_data.get("archived") or not _should_scan(repo_data):
             continue
         repo_full  = f"{repo_data['owner']['login']}/{repo_data['name']}"
         default_br = _default_branch(repo_full)

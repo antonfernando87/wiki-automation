@@ -2,9 +2,9 @@
 
 Automatically post **daily, weekly, and monthly summaries** of your GitHub
 activity (commits, pull requests, and issues) to your repository's wiki.
-Summaries are generated as narrative paragraphs using the GitHub Models API
-(gpt-4o-mini) with a plain-text fallback — no external services or API keys
-required beyond a standard GitHub PAT.
+Summaries are generated as first-person narrative paragraphs using the GitHub
+Models API (gpt-4o-mini) with a plain-text fallback — no external services or
+API keys required beyond a standard GitHub PAT.
 
 Great for tracking your own work and producing progress reports with minimal
 effort.
@@ -18,6 +18,17 @@ effort.
 | Daily summary | Mon–Fri at 23:59 UTC | `Daily-Updates` |
 | Weekly summary | Every Friday at 23:59 UTC | `Weekly-Updates` |
 | Monthly summary | Last day of each month at 23:59 UTC | `Monthly-Updates` |
+
+Each summary contains:
+
+- **Pull Requests** — all PRs opened or merged in the period (open PRs are
+  always kept in the table even if no new commits were made).
+- **Issues** — issues opened or closed in the period.
+- **Branch Work** — commits pushed to branches that don't yet have a PR,
+  grouped by `repo/branch`.
+- **Work Summary** — an AI-generated first-person narrative covering only the
+  PRs and branches where real commits were made (merge commits, sync commits,
+  and automated bumps are filtered out).
 
 All workflows can also be triggered manually for any date range.
 
@@ -33,7 +44,9 @@ your-wiki-automation-repo/
 │   └── monthly-wiki-update.yml
 ├── generate_daily_summary.py
 ├── generate_weekly_summary.py
-└── generate_monthly_summary.py
+├── generate_monthly_summary.py
+├── config.yml          <- personal repo filter (optional)
+└── README.md
 ```
 
 ---
@@ -63,7 +76,8 @@ GitHub wikis must have at least one page before automation can push to them.
 
 ### 4. Add the PAT as a repository secret
 
-In your repo → **Settings → Secrets and variables → Actions → Secrets → New repository secret**:
+In your repo → **Settings → Secrets and variables → Actions → Secrets → New
+repository secret**:
 
 | Name | Value |
 |------|-------|
@@ -74,7 +88,8 @@ In your repo → **Settings → Secrets and variables → Actions → Secrets �
 By default the scripts track the account that owns the repository. To track a
 different username, add a repository variable:
 
-In your repo → **Settings → Secrets and variables → Actions → Variables → New repository variable**:
+In your repo → **Settings → Secrets and variables → Actions → Variables → New
+repository variable**:
 
 | Name | Value |
 |------|-------|
@@ -104,9 +119,39 @@ repo.
 | `REPORT_MONTH` | Manual workflow input (optional) | Override the report month `YYYY-MM` (monthly workflow) |
 
 No hardcoded repository list is needed. PRs and issues are found via GitHub's
-search API across all repositories. Commits are scanned from the 20
-most-recently-updated non-archived repos (daily/weekly) or all non-archived
-repos (monthly).
+search API across all repositories. Commits are scanned per-branch across your
+40 most-recently-updated non-archived repos by default (or all repos when
+`track_repos` is set in `config.yml`).
+
+---
+
+## Personal configuration — `config.yml`
+
+`config.yml` (at the repo root) lets you control which repositories are
+scanned without touching the scripts. All keys are optional.
+
+```yaml
+# If non-empty, ONLY these repos are scanned (no 40-repo cap).
+# Accepts "owner/name" or bare "name".
+track_repos:
+  - AntonMFernando-NOAA/global-workflow
+  - ufs-weather-model
+
+# Always excluded, regardless of track_repos.
+ignore_repos:
+  - test-automation
+  - some-fork
+```
+
+| Key | Default | Behaviour |
+|-----|---------|-----------|
+| `track_repos` | `[]` (empty) | Empty = auto-scan the 40 most-recently-updated repos. Non-empty = explicit allowlist, no cap. |
+| `ignore_repos` | `[]` (empty) | Repos in this list are always skipped. |
+
+> **Note:** `pyyaml` must be available in the runner environment for
+> `config.yml` to be loaded. If it is missing, the scripts fall back to
+> default behaviour and print a warning. Install it with
+> `pip install pyyaml` or add it to the workflow's dependency step.
 
 ---
 
@@ -131,21 +176,40 @@ Manual triggers are not restricted to the scheduled days.
 
 ```
 Scheduled trigger (or manual)
-        │
-        ▼
+        |
+        v
 GitHub Actions runner
   1. Checks out the repository
   2. Runs the summary script
-        ├── Searches GitHub for PRs and issues authored by GITHUB_ACTOR (all repos)
-        ├── Scans commits in the 20 most-recently-updated non-archived repos
-        │   (daily / weekly) or all non-archived repos (monthly)
-        ├── Calls GitHub Models API (gpt-4o-mini) for a narrative paragraph
-        │   (falls back to a template paragraph if the API is unavailable)
-        └── Writes <type>_summary_patch.md
+        |-- Reads config.yml (track_repos / ignore_repos)
+        |-- Searches GitHub for PRs and issues authored by GITHUB_ACTOR
+        |-- Scans every branch in every qualifying repo for commits
+        |   authored by GITHUB_ACTOR within the time window
+        |   (merge commits, sync commits, and automated bumps are filtered)
+        |     |-- Commits on a PR branch  --> attributed to that PR
+        |     +-- Commits on a branch without a PR --> collected as Branch Work
+        |-- Open PRs with no real commits are kept in the PR table
+        |   but omitted from the Work Summary narrative
+        |-- Calls GitHub Models API (gpt-4o-mini) for a first-person
+        |   narrative paragraph (falls back to a template if unavailable)
+        +-- Writes <type>_summary_patch.md
   3. Clones <your-repo>.wiki.git
   4. Prepends the new entry to the relevant wiki page
   5. Commits and pushes the wiki
 ```
+
+### Commit filtering
+
+The following commit messages are automatically excluded from summaries to
+avoid noise from automated processes and merge operations:
+
+- `Merge ...` / `Merged ...` (all merge commits)
+- `Sync from ...` / `Sync to ...` / `Sync with branch ...`
+- `Update from ...` / `Updated branch ...` / `Update changelog` / `Update submodule`
+- `Bump version` / `Bump deps` / `Bump dependencies`
+- `Revert "Merge ..."`
+- `Auto-generated ...` / `Autogenerated ...`
+- `chore: release` / `chore: bump` / `chore(scope): version`
 
 ---
 
@@ -158,6 +222,8 @@ GitHub Actions runner
 | `fatal: could not read from remote` | Wiki not initialised | Create at least one wiki page manually first |
 | No activity in summary | PAT lacks `repo` or `read:org` scope | Regenerate PAT with the correct scopes |
 | Workflow not visible under Actions | Workflow YAML not in `.github/workflows/` | Confirm files are committed to the default branch |
+| Branch work not appearing | All commits on the branch match noise-filter patterns | Check that at least one commit message doesn't match `SKIP_RE` |
+| `config.yml` ignored or warning printed | `pyyaml` not installed | Add `pip install pyyaml` to the workflow's setup step |
 
 ---
 
@@ -165,7 +231,9 @@ GitHub Actions runner
 
 | What | Where |
 |------|-------|
+| Restrict which repos are scanned | Edit `track_repos` / `ignore_repos` in `config.yml` |
 | Change schedule | Edit the `cron` expression in the relevant workflow YAML |
-| Track additional users | Modify `GITHUB_ACTOR` to a comma-separated list (requires script change) |
+| Track a different user | Set the `GITHUB_ACTOR` repository variable |
 | Change wiki page names | Edit the filename references in the workflow's push step |
-| Adjust narrative style | Edit the prompt string inside `generate_*.py` |
+| Adjust narrative style | Edit the system prompt string inside `generate_*.py` |
+| Add more noise-commit patterns | Extend the `SKIP_RE` regex near the top of each `generate_*.py` |
