@@ -265,14 +265,14 @@ def collect_created_issues():
 
 def collect_pr_reviews():
     """PRs reviewed this month (deduped by PR URL).
-    Captures formal reviews AND inline comment events.
+    Captures formal reviews, inline diff comments, and PR conversation comments.
     """
     reviews = []
     seen: set = set()
     try:
         for event in gh_get(f"https://api.github.com/users/{GITHUB_ACTOR}/events"):
             evt_type = event.get("type", "")
-            if evt_type not in ("PullRequestReviewEvent", "PullRequestReviewCommentEvent"):
+            if evt_type not in ("PullRequestReviewEvent", "PullRequestReviewCommentEvent", "IssueCommentEvent"):
                 continue
             ts = event.get("created_at", "")
             if not ts:
@@ -281,7 +281,25 @@ def collect_pr_reviews():
             if not (MONTH_START <= dt <= MONTH_END):
                 continue
             payload = event.get("payload", {})
-            pr      = payload.get("pull_request", {})
+            if evt_type == "IssueCommentEvent":
+                # Only capture comments on PRs, not plain issues
+                issue = payload.get("issue", {})
+                if not issue.get("pull_request"):
+                    continue
+                pr_url = issue.get("html_url", "")
+                if not pr_url or pr_url in seen:
+                    continue
+                seen.add(pr_url)
+                repo_url = issue.get("repository_url", "")
+                repo_name = repo_url.split("/")[-1] if repo_url else ""
+                reviews.append({
+                    "title":  issue.get("title", ""),
+                    "number": issue.get("number"),
+                    "repo":   repo_name,
+                    "url":    pr_url,
+                })
+                continue
+            pr = payload.get("pull_request", {})
             if not pr or pr.get("html_url") in seen:
                 continue
             seen.add(pr["html_url"])

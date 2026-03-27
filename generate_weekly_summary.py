@@ -246,18 +246,37 @@ except Exception as e:
     print(f"Warning — created issues: {e}", file=sys.stderr)
 
 # PR reviews submitted this week (via Events API).
-# Captures formal reviews AND inline comment events.
+# Captures formal reviews, inline diff comments, and PR conversation comments.
 pr_reviews: list = []
 _seen_review_keys: set = set()
 try:
     for event in gh_get(f"https://api.github.com/users/{GITHUB_ACTOR}/events"):
         evt_type = event.get("type", "")
-        if evt_type not in ("PullRequestReviewEvent", "PullRequestReviewCommentEvent"):
+        if evt_type not in ("PullRequestReviewEvent", "PullRequestReviewCommentEvent", "IssueCommentEvent"):
             continue
         if not in_window(event.get("created_at", "")):
             continue
         payload = event.get("payload", {})
-        pr      = payload.get("pull_request", {})
+        if evt_type == "IssueCommentEvent":
+            # Only capture comments on PRs, not plain issues
+            issue = payload.get("issue", {})
+            if not issue.get("pull_request"):
+                continue
+            pr_url = issue.get("html_url", "")
+            if not pr_url or pr_url in _seen_review_keys:
+                continue
+            _seen_review_keys.add(pr_url)
+            repo_url = issue.get("repository_url", "")
+            repo_name = repo_url.split("/")[-1] if repo_url else ""
+            pr_reviews.append({
+                "number": issue.get("number"),
+                "title":  issue.get("title", ""),
+                "repo":   repo_name,
+                "url":    pr_url,
+                "state":  "commented",
+            })
+            continue
+        pr = payload.get("pull_request", {})
         if not pr:
             continue
         key = pr.get("html_url")
