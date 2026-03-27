@@ -21,7 +21,7 @@ effort.
 
 Each summary contains:
 
-- **Pull Requests** — all PRs draft/opened or merged in the period. Open PRs are
+- **Pull Requests** — all PRs opened (or draft) or merged in the period. Open PRs are
   shown in the table if they were opened **or** had commits pushed in the
   period. Only PRs with real commits appear in the Work Summary narrative.
 - **Issues** — issues opened or closed in the period.
@@ -62,7 +62,7 @@ Fork `AntonMFernando-NOAA/wiki-automation` into your own GitHub account, or
 copy the files into a new repository. The repository must be **public** or you
 must have a paid plan for GitHub Actions on private repos.
 
-### 2. Initialise the wiki
+### 2. Initialize the wiki
 
 GitHub wikis must have at least one page before automation can push to them.
 
