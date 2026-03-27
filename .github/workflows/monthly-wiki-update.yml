@@ -66,11 +66,11 @@ jobs:
           git clone https://x-access-token:${WIKI_PAT}@github.com/${REPO}.wiki.git wiki
           cd wiki
 
-          HEADER="# Progress Report, workflow for operational GEFS"
+          HEADER="# Progress Report"
 
           # Strip the header from the existing file (it will be re-added at top)
           if [ -f Monthly-Updates.md ]; then
-            grep -v "^# Progress Report, workflow for operational GEFS" Monthly-Updates.md > stripped.md
+            grep -v "^# Progress Report" Monthly-Updates.md > stripped.md
           else
             touch stripped.md
           fi
