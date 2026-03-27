@@ -395,7 +395,7 @@ def generate_narrative(prs, commits, branch_work, created_issues=None, pr_review
     prompt = (
         f"Below is the GitHub activity for {MONTH_LABEL}.\n\n"
         f"{activity_text}\n\n"
-        "Write a concise 3–5 sentence first-person narrative summary of the month's work (use 'I', not 'the developer'). "
+        "Write a concise first-person narrative summary of the month's work in no more than 130 words (use 'I', not 'the developer'). "
         "Only describe the categories listed above — do NOT mention or imply the absence of any category not listed. "
         "Focus on the overall themes and goals, not individual items. "
         "Do NOT mention PR numbers, issue numbers, commit hashes, URLs, or weeks. "
@@ -428,7 +428,7 @@ def generate_narrative(prs, commits, branch_work, created_issues=None, pr_review
                     },
                     {"role": "user", "content": prompt},
                 ],
-                "max_tokens": 350,
+                "max_tokens": 200,
                 "temperature": 0.3,
             },
             timeout=30,

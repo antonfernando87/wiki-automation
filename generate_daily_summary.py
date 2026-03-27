@@ -537,7 +537,7 @@ def generate_narrative(prs, commits, branch_work, created_issues=None, pr_review
     prompt = (
         f"Below is the GitHub activity for {SUMMARY_DATE.strftime('%A, %B %d, %Y')}.\n\n"
         f"{activity_text}\n\n"
-        "Write a concise 2–4 sentence first-person narrative work summary (use 'I', not 'the developer'). "
+        "Write a concise first-person narrative work summary in no more than 130 words (use 'I', not 'the developer'). "
         "Only describe the categories listed above — do NOT mention or imply the absence of any category not listed. "
         "Describe the theme and purpose of the work, not individual commits. "
         "Include work done directly in branches even if no PR exists yet. "
@@ -569,7 +569,7 @@ def generate_narrative(prs, commits, branch_work, created_issues=None, pr_review
                     },
                     {"role": "user", "content": prompt},
                 ],
-                "max_tokens": 250,
+                "max_tokens": 200,
                 "temperature": 0.3,
             },
             timeout=30,
