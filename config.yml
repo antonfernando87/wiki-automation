@@ -31,4 +31,5 @@ track_repos: []
 #   ignore_repos:
 #     - test-automation
 #     - some-fork
-ignore_repos: []
+ignore_repos:
+  - AntonMFernando-NOAA/wiki-automation
