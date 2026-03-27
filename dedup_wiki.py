@@ -70,8 +70,20 @@ if monthly:
         txt = re.sub(re.escape(key_m.group(1)) + r".*?\n(?=\n|\Z)", "",
                      txt, count=1, flags=re.DOTALL)
 else:
-    txt = re.sub(re.escape(first_line.strip()) + r".*?(?=\n## |\Z)", "",
-                 txt, count=1, flags=re.DOTALL)
+    # Use date-based matching to handle format differences (e.g. "March 4" vs "March 04")
+    if new_date is not None:
+        existing_heading = next(
+            (ln.strip() for ln in txt.splitlines()
+             if parse_date(ln) is not None
+             and parse_date(ln).date() == new_date.date()),
+            None
+        )
+        if existing_heading:
+            txt = re.sub(re.escape(existing_heading) + r".*?(?=\n## |\Z)", "",
+                         txt, count=1, flags=re.DOTALL)
+    else:
+        txt = re.sub(re.escape(first_line.strip()) + r".*?(?=\n## |\Z)", "",
+                     txt, count=1, flags=re.DOTALL)
 
 txt = re.sub(r"\n{3,}", "\n\n", txt).strip()
 

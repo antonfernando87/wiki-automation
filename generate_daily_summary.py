@@ -480,7 +480,7 @@ iss_table    = build_issue_table(all_issues)
 branch_table = build_branch_work_table(branch_work_commits)
 
 sections = [
-    f"## {SUMMARY_DATE.strftime('%B %d, %Y')}\n"
+    f"## {SUMMARY_DATE.strftime('%B')} {SUMMARY_DATE.day}, {SUMMARY_DATE.year}\n"
     f"_{SUMMARY_DATE.strftime('%A')}_",
     "",
     "### 🔀 Pull Requests",
