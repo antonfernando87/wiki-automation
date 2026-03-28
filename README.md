@@ -27,7 +27,7 @@ Each summary contains:
 - **Issues** — issues opened or closed in the period.
 - **Branch Work** — commits pushed to branches that don't yet have a PR,
   grouped by `repo/branch`.
-- **PR Review Participation** — PRs authored by others where you left a formal
+- **PR Review Participation** — PRs authored by others (not your own) where you left a formal
   review, an inline diff comment, or a conversation comment during the period.
 - **Work Summary** — an AI-generated first-person narrative covering only the
   activity categories that actually occurred (empty categories are never
@@ -205,7 +205,6 @@ All three workflows can be triggered manually from the GitHub UI.
 | Summary style | `bullets` | `narrative` or `bullets`. Leave blank to use `config.yml`. |
 | Max words (narrative) | `100` | Word limit for narrative style. Leave blank for `config.yml` value. |
 | Bullet count | `4` | Number of bullet points. Leave blank for `config.yml` value. |
-| Scripts ref | `my-custom-branch` | Branch or tag of this repo to check out before running. Leave blank to use the default branch (or the branch you triggered from). |
 
 ### Weekly workflow inputs
 
@@ -215,7 +214,6 @@ All three workflows can be triggered manually from the GitHub UI.
 | Summary style | `narrative` | `narrative` or `bullets`. Leave blank to use `config.yml`. |
 | Max words (narrative) | `130` | Word limit for narrative style. Leave blank for `config.yml` value. |
 | Bullet count | `5` | Number of bullet points. Leave blank for `config.yml` value. |
-| Scripts ref | `my-custom-branch` | Branch or tag of this repo to check out before running. Leave blank to use the default branch (or the branch you triggered from). |
 
 ### Monthly workflow inputs
 
@@ -225,16 +223,11 @@ All three workflows can be triggered manually from the GitHub UI.
 | Summary style | `bullets` | `narrative` or `bullets`. Leave blank to use `config.yml`. |
 | Max words (narrative) | `130` | Word limit for narrative style. Leave blank for `config.yml` value. |
 | Bullet count | `6` | Number of bullet points. Leave blank for `config.yml` value. |
-| Scripts ref | `my-custom-branch` | Branch or tag of this repo to check out before running. Leave blank to use the default branch (or the branch you triggered from). |
 
 > **Note:** Workflow dispatch inputs override `config.yml` for that single run only.
 > The permanent default is always whatever is set in `config.yml`.
 >
-> **Running from a custom branch (forks):** If you have customised this repo on a
-> non-default branch, use the **Scripts ref** input to specify that branch when
-> triggering manually. For scheduled runs to pick up your branch automatically,
-> set it as the **default branch** of your fork
-> (Repository → Settings → Default branch).
+> **Running from a custom branch (forks):** Select your branch from the **Use workflow from** dropdown when triggering manually. For scheduled runs to pick up your branch automatically, set it as the **default branch** of your fork (Repository → Settings → Default branch).
 
 ---
 
@@ -256,6 +249,8 @@ GitHub Actions runner
         |   (PullRequestReviewEvent, PullRequestReviewCommentEvent,
         |   and IssueCommentEvent on PRs — covers approvals, inline diff
         |   comments, and regular conversation comments)
+        |   Only PRs authored by others are included; reviews/comments on
+        |   your own PRs are excluded
         |-- Scans every branch in every qualifying repo for commits
         |   authored by GITHUB_ACTOR within the time window
         |   (merge commits, sync commits, and automated bumps are filtered)

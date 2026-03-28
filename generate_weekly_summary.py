@@ -297,6 +297,9 @@ try:
             if not pr_url or pr_url in _seen_review_keys:
                 continue
             _seen_review_keys.add(pr_url)
+            # Skip reviews/comments on your own PRs
+            if issue.get("user", {}).get("login", "") == GITHUB_ACTOR:
+                continue
             repo_url = issue.get("repository_url", "")
             repo_name = repo_url.split("/")[-1] if repo_url else ""
             pr_reviews.append({
@@ -314,6 +317,9 @@ try:
         if key in _seen_review_keys:
             continue
         _seen_review_keys.add(key)
+        # Skip reviews/comments on your own PRs
+        if pr.get("user", {}).get("login", "") == GITHUB_ACTOR:
+            continue
         if evt_type == "PullRequestReviewEvent":
             state = payload.get("review", {}).get("state", "commented").lower()
         else:

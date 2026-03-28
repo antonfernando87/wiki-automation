@@ -321,6 +321,9 @@ def collect_pr_reviews():
                 if not pr_url or pr_url in seen:
                     continue
                 seen.add(pr_url)
+                # Skip reviews/comments on your own PRs
+                if issue.get("user", {}).get("login", "") == GITHUB_ACTOR:
+                    continue
                 repo_url = issue.get("repository_url", "")
                 repo_name = repo_url.split("/")[-1] if repo_url else ""
                 reviews.append({
@@ -334,6 +337,9 @@ def collect_pr_reviews():
             if not pr or pr.get("html_url") in seen:
                 continue
             seen.add(pr["html_url"])
+            # Skip reviews/comments on your own PRs
+            if pr.get("user", {}).get("login", "") == GITHUB_ACTOR:
+                continue
             reviews.append({
                 "title":  pr.get("title", ""),
                 "number": pr.get("number"),
