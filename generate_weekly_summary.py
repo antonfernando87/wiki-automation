@@ -313,6 +313,9 @@ try:
         pr = payload.get("pull_request", {})
         if not pr:
             continue
+        # Skip dismissed reviews — they are invalidated contributions
+        if payload.get("action") == "dismissed":
+            continue
         key = pr.get("html_url")
         if key in _seen_review_keys:
             continue
@@ -503,7 +506,7 @@ def _template_narrative(prs, commits, branch_work, created_issues=None, pr_revie
         parts.append(f"Commit work included: {'; '.join(unique[:4])}.")
     if branch_work:
         branch_msgs = [m for msgs in branch_work.values() for m in msgs][:3]
-        parts.append(f"Branch work (no PR): {'; '.join(branch_msgs)}.")
+        parts.append(f"In-progress work: {'; '.join(branch_msgs)}.")
     if created_issues:
         titles = "; ".join(f"[#{i['number']}]({i['url']}) {i['title'][:60]}" for i in created_issues[:3])
         parts.append(f"Issues opened: {titles}.")
@@ -556,7 +559,7 @@ def generate_narrative(prs, commits, branch_work, created_issues=None, pr_review
     if commit_block:
         activity_sections.append(f"Commits on PR branches:\n{commit_block}")
     if branch_block:
-        activity_sections.append(f"Branch work (no PR yet):\n{branch_block}")
+        activity_sections.append(f"In-progress work (no PR yet):\n{branch_block}")
     if issue_block:
         activity_sections.append(f"Issues opened this week:\n{issue_block}")
     if review_block:
@@ -654,15 +657,18 @@ def build_branch_work_table(branch_work):
     if not branch_work:
         return ""
     rows = [
-        "| Branch | Work Description |",
-        "|--------|------------------|",
+        "| Repository (branch) | Work Description |",
+        "|---------------------|------------------|",
     ]
     for branch_key, msgs in branch_work.items():
         unique_msgs = list(dict.fromkeys(msgs))
         # Truncate each message and join up to 3
         snippets = [m[:72] + ("…" if len(m) > 72 else "") for m in unique_msgs[:3]]
         description = " · ".join(snippets)
-        rows.append(f"| `{branch_key}` | {description} |")
+        # Format as "repo (branch)" — split on first "/" to separate repo from branch path
+        parts = branch_key.split("/", 1)
+        label = f"{parts[0]} ({parts[1]} branch)" if len(parts) == 2 else branch_key
+        rows.append(f"| {label} | {description} |")
     return "\n".join(rows) + "\n"
 
 
@@ -682,7 +688,7 @@ sections = [
     pr_table,
 ]
 if branch_table:
-    sections += ["### 🌿 Branch Work", branch_table, ""]
+    sections += ["### 🌿 Work in Progress", branch_table, ""]
 sections += ["### 💾 Work Summary", narrative, "", "---", ""]
 
 output = "\n".join(sections)

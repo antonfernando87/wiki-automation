@@ -25,7 +25,7 @@ Each summary contains:
   shown in the table if they were opened **or** had commits pushed in the
   period. Only PRs with real commits appear in the Work Summary narrative.
 - **Issues** — issues opened or closed in the period.
-- **Branch Work** — commits pushed to branches that don't yet have a PR,
+- **Work in Progress** — commits pushed to branches that don't yet have a PR,
   grouped by `repo/branch`.
 - **PR Review Participation** — PRs authored by others (not your own) where you left a formal
   review, an inline diff comment, or a conversation comment during the period.
@@ -102,6 +102,8 @@ repository variable**:
 
 In your repo → **Settings → Actions → General → Workflow permissions**:
 - Select **Read and write permissions** → **Save**.
+
+This is required for two reasons: the workflows push updates to the wiki, and they also commit any changes to tracked repo files (e.g. `README.md`, `prompt_instructions.txt`) back to the main branch automatically after each run.
 
 ### 7. Enable the workflows
 
@@ -257,7 +259,7 @@ GitHub Actions runner
         |     |-- Commits on a PR branch  --> attributed to that PR
         |     |   (fork-based PRs: fetches commits from the fork repo,
         |     |   not the base repo, so cross-org PRs are captured)
-        |     +-- Commits on a branch without a PR --> collected as Branch Work
+        |     +-- Commits on a branch without a PR --> collected as Work in Progress
         |-- Open PRs with no real commits are kept in the PR table
         |   (draft PRs always appear in the table on the day they were opened)
         |   but omitted from the Work Summary narrative
@@ -293,7 +295,6 @@ avoid noise from automated processes and merge operations:
 | `fatal: could not read from remote` | Wiki not initialised | Create at least one wiki page manually first |
 | No activity in summary | PAT lacks `repo` or `read:org` scope | Regenerate PAT with the correct scopes |
 | Workflow not visible under Actions | Workflow YAML not in `.github/workflows/` | Confirm files are committed to the default branch |
-| Branch work not appearing | All commits on the branch match noise-filter patterns | Check that at least one commit message doesn't match `SKIP_RE` |
 | `config.yml` ignored or warning printed | `pyyaml` not installed | Add `pip install pyyaml` to the workflow's setup step |
 | Draft PR or new PR missing on backfill | PR was updated after the target date, so `updated:` search misses it | The scripts also run a `created:` search — ensure the PAT has `repo` scope on the repo where the PR lives |
 | Scheduled run fires but writes nothing | `enable_daily` / `enable_weekly` / `enable_monthly` set to `false` in `config.yml` | Expected behaviour — set back to `true` or trigger manually |

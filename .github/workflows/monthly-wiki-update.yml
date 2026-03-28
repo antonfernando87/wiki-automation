@@ -31,7 +31,7 @@ jobs:
   update-wiki:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -113,3 +113,16 @@ jobs:
           git add Monthly-Updates.md _Sidebar.md
           git diff --cached --quiet \
             || (git commit -m "Monthly wiki update: $(date -u +%Y-%m)" && git push)
+
+      - name: Commit repo changes
+        if: steps.check_last_day.outputs.skip != 'true'
+        env:
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd $GITHUB_WORKSPACE
+          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git
+          git add -A
+          git diff --cached --quiet \
+            || git commit -m "chore: auto-update repo files [$(date -u +%Y-%m-%d)]" \
+            && git push origin HEAD

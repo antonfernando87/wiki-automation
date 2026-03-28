@@ -336,6 +336,9 @@ def collect_pr_reviews():
             pr = payload.get("pull_request", {})
             if not pr or pr.get("html_url") in seen:
                 continue
+            # Skip dismissed reviews — they are invalidated contributions
+            if payload.get("action") == "dismissed":
+                continue
             seen.add(pr["html_url"])
             # Skip reviews/comments on your own PRs
             if pr.get("user", {}).get("login", "") == GITHUB_ACTOR:
@@ -365,7 +368,7 @@ def _template_narrative(prs, commits, branch_work, created_issues=None, pr_revie
         parts.append(f"Commit activity included: {msgs}.")
     if branch_work:
         branch_msgs = [m for msgs in branch_work.values() for m in msgs][:3]
-        parts.append(f"Branch work (no PR): {'; '.join(branch_msgs)}.")
+        parts.append(f"In-progress work: {'; '.join(branch_msgs)}.")
     if created_issues:
         titles = "; ".join(i['title'] for i in created_issues[:3])
         parts.append(f"Issues opened: {titles}.")
@@ -412,7 +415,7 @@ def generate_narrative(prs, commits, branch_work, created_issues=None, pr_review
     if commit_block:
         activity_sections.append(f"Commits on PR branches:\n{commit_block}")
     if branch_block:
-        activity_sections.append(f"Branch work (no PR yet):\n{branch_block}")
+        activity_sections.append(f"In-progress work (no PR yet):\n{branch_block}")
     if issue_block:
         activity_sections.append(f"Issues opened this month:\n{issue_block}")
     if review_block:
