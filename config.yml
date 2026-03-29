@@ -22,7 +22,8 @@ enable_monthly: true
 #   track_repos:
 #     - AntonMFernando-NOAA/global-workflow
 #     - AntonMFernando-NOAA/ufs-weather-model
-track_repos: []
+track_repos:
+    - wiki-automation
 
 # Repositories to ignore entirely (by bare name or "owner/name").
 # Useful to exclude forks, mirrors, or noise repos.
